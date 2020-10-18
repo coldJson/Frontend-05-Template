@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>地图编辑器</title>
+  <style type="text/css">
+  body {
+    margin: 0;
+  }
+  .map {
+    background-color: #FFFFFF;
+    width: 700px;
+    height: 700px;
+    font-size: 0;
+  }
+
+  .cell {
+    width: 5px;
+    height: 5px;
+    margin: 1px;
+    background-color: rgba(200, 200, 200, .8);
+    display: inline-block;
+  }
+
+  .cell.wall {
+    background-color: #808080;
+  }
+
+  button {
+    width: 100px;
+    height: 60px;
+    font-size: 16px;
+    text-align: center;
+    line-height: 60px;
+    margin-top: 10px;
+  }
+  </style>
+</head>
+<body>
+  <div class="map"></div>
+  <button onclick="mapInstance.save()">保存地图</button>
+  <script type="text/javascript">
+    function sleep(time) {
+      return new Promise(resolve => {
+        setTimeout(resolve, time);
+      });
+    }
+
+    class Sorted {
+      constructor(data, compare) {
+        this.data = data.slice();
+        this.compare = compare || ((a, b) => a - b);
+      }
+
+      take() {
+        if (!this.data.length) return;
+        let min = this.data[0];
+        let minIndex = 0;
+
+        for (let i = 1;i < this.data.length;i++) {
+          if (this.compare(this.data[i], min) < 0) {
+            min = this.data[i];
+            minIndex = i;
+          }
+        }
+
+        this.data[minIndex] = this.data[this.data.length - 1];
+        this.data.pop();
+        return min;
+      }
+
+      give(item) {
+        this.data.push(item);
+      }
+    }
+
+    class MapEditor {
+      constructor(selector) {
+        this.map = JSON.parse(localStorage.getItem('preMap')) || Array(10000).fill(0);
+        this.preNodeMap = Array(10000).fill(null);
+        this.queue = [];
+        this.dom = null;
+        this.mount(selector);
+      }
+
+      mount(selector) {
+        this.dom = document.querySelector(selector);
+        for (let x = 0;x < 100;x++) {
+          for (let y = 0;y < 100;y++) {
+            const cell = document.createElement('div');
+            cell.classList.add('cell');
+            this.map[x * 100 + y] === 1 && cell.classList.add('wall');
+            cell.addEventListener('mousemove', () => {
+              cell.classList.add('wall');
+              this.map[x * 100 + y] = 1;
+            });
+            this.dom.appendChild(cell);
+          }
+        }
+        this.dom.addEventListener('mousedown', (e) => {
+          if (e.which === 3) {
+            e.preventDefault();
+            this.clear();
+          }
+        });
+        this.dom.addEventListener('contextmenu', e => e.preventDefault());
+      }
+
+      clear() {
+        this.map = Array(10000).fill(0);
+        localStorage.setItem('preMap', JSON.stringify(this.map));
+        const cells = document.querySelectorAll('.cell');
+        for (let x = 0;x < 100;x++) {
+          for (let y = 0;y < 100;y++) {
+            cells[x * 100 + y].classList.remove('wall');
+          }
+        }
+      }
+
+      save() {
+        localStorage.setItem('preMap', JSON.stringify(this.map));
+      }
+
+      // 寻路
+      async path(start, end) {
+        this.queue = new Sorted([start], (a, b) => this.distance(a, end) - this.distance(b, end));
+        // console.log(this.queue);
+
+        while(this.queue.data.length) {
+          let [x, y] = this.queue.take();
+          if (!this.map[100 * y + x]) {
+            this.map[100 * y + x] = 2;
+          }
+          // console.log(JSON.stringify([x, y]));
+          if (x === end[0] && y === end[1]) {
+            this.renderPath(x, y);
+            // console.log(x, y);
+            // console.log(this.preNodeMap);
+            return true;
+          }
+          await this.insert(x - 1, y, [x, y]);
+          await this.insert(x + 1, y, [x, y]);
+          await this.insert(x, y - 1, [x, y]);
+          await this.insert(x, y + 1, [x, y]);
+
+          await this.insert(x - 1, y - 1, [x, y]);
+          await this.insert(x - 1, y + 1, [x, y]);
+          await this.insert(x + 1, y - 1, [x, y]);
+          await this.insert(x + 1, y + 1, [x, y]);
+        }
+        return false;
+      }
+
+      // 插入
+      async insert(x, y, rootNode) {
+        if (x < 0 || x > 100 || y < 0 || y > 100) {
+          return;
+        }
+        if (this.map[ 100 * y + x]) {
+          return;
+        }
+        // 绘制
+        await sleep(30);
+        this.dom.children[y * 100 + x].style.backgroundColor = 'lightgreen';
+        this.map[100 * y + x] = 2;
+        this.preNodeMap[100 * y + x] = rootNode;
+        this.queue.give([x, y]);
+      }
+
+      // 绘制路径
+      renderPath(x, y) {
+        let xpos = x;
+        let ypos = y;
+        while(this.preNodeMap[ypos * 100 + xpos]) {
+          this.dom.children[ypos * 100 + xpos].style.backgroundColor = 'red';
+          let preNode = this.preNodeMap[ypos * 100 + xpos];
+          xpos = preNode[0];
+          ypos = preNode[1];
+        }
+        this.dom.children[ypos * 100 + xpos].style.backgroundColor = 'red';
+      }
+
+      distance(point, point2) {
+        return Math.pow(point[0] - point2[0], 2) + Math.pow(point[1] - point2[1], 2);
+      }
+    }
+
+    const mapInstance = new MapEditor('.map');
+  </script>
+</body>
+</html>
