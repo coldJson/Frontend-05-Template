@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>rgb滑块</title>
+    <style>
+        .pan {
+            width: 150px;
+            height: 150px;
+            margin: 50px;
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <label for="red">red: 
+        <input id="red" type="range" min="0" max="255">
+    </label>
+    <label for="green">green: 
+        <input id="green" type="range" min="0" max="255">
+    </label>
+    <label for="blue">blue: 
+        <input id="blue" type="range" min="0" max="255">
+    </label>
+    <div class="pan"></div>
+    <script>
+        const panDom = document.querySelector('.pan');
+
+        const reactivities = new Map(); // 存储注册的被监听的对象或变量
+        const callbacks = new Map(); // 存储监听对象的回调方法
+        let usedReactivities = []; // 存储callback对应的监听变量，建立callbacks索引用
+        // 封装 用proxy监听对象的赋值、取值
+        function reactive(obj) {
+            // 若对象已注册，直接返回已注册的proxy
+            if (reactivities.has(obj))
+                return reactivities.get(obj);
+            // 对象未注册，创建一个新的proxy
+            let proxy = new Proxy(obj, {
+                set(obj, prop, value) {
+                    obj[prop] = value;
+                    if (callbacks.has(obj)) {
+                        if (callbacks.get(obj).has(prop)) {
+                            const callback = callbacks.get(obj).get(prop);
+                            callback();
+                        }
+                    }
+                    // console.log(obj, prop, value);
+                    return obj[prop];
+                },
+                get(obj, prop) {
+                    // console.log(obj, prop);
+                    usedReactivities.push([obj, prop]);
+                    if (typeof obj[prop] === 'object') {
+                        return reactive(obj[prop]);
+                    }
+                    return obj[prop];
+                }
+            });
+            reactivities.set(obj, proxy);
+            return proxy;
+        }
+
+        // 监听数据变化后的处理——回调
+        function effect(callback) {
+            usedReactivities = [];
+            callback();
+
+            for (let reactivity of usedReactivities) {
+                if (!callbacks.has(reactivity[0])) {
+                    callbacks.set(reactivity[0], new Map());
+                }
+                if (!callbacks.get(reactivity[0]).has(reactivity[1])) {
+                    // 简易情况，对一个对象属性，只有一个callback，故不用数组
+                    callbacks.get(reactivity[0]).set(reactivity[1], callback);
+                }
+            }
+        };
+
+        
+
+        const color = {
+            r: 0,
+            g: 0,
+            b: 0
+        };
+        let po = reactive(color);
+        effect(() => {
+            document.getElementById('red').value = po.r;
+            document.getElementById('green').value = po.g;
+            document.getElementById('blue').value = po.b;
+            panDom.style.backgroundColor = `rgb(${po.r}, ${po.g}, ${po.b})`;
+        });
+        document.getElementById('red').addEventListener('input', e => po.r = e.target.value);
+        document.getElementById('green').addEventListener('input', e => po.g = e.target.value);
+        document.getElementById('blue').addEventListener('input', e => po.b = e.target.value);
+    </script>
+</body>
+</html>
